@@ -1,0 +1,251 @@
+1)  Топ-10 самых дорогих курсов
+
+SELECT название, стоимость
+FROM Курс
+ORDER BY стоимость DESC
+LIMIT 10;
+
+2)  Пользователи, зарегистрировавшиеся в последние 30 дней
+
+SELECT логин, email, дата_регистрации
+FROM Пользователь
+WHERE дата_регистрации >= CURRENT_DATE - INTERVAL '30 days';
+
+3)  Количество пользователей с сертификатами
+
+SELECT COUNT(*)
+FROM Пользователь
+WHERE сертификаты IS NOT NULL;
+
+4)  Курсы и количество пользователей, записавшихся на них
+
+SELECT Курс.название, COUNT(user_course.user_id) AS количество_пользователей
+FROM user_course
+JOIN Курс ON user_course.course_id = Курс.course_id
+GROUP BY Курс.course_id
+ORDER BY количество_пользователей DESC;
+
+5)  Пользователи, оставившие комментарии более чем к 5 урокам
+
+SELECT Пользователь.логин, COUNT(Комментарий.lesson_id) AS количество_комментариев
+FROM Комментарий
+JOIN Пользователь ON Комментарий.user_id = Пользователь.user_id
+GROUP BY Пользователь.user_id
+HAVING COUNT(Комментарий.lesson_id) > 5;
+
+6)  Средняя оценка курсов, сгруппированная по стоимости
+
+SELECT
+    CASE
+        WHEN стоимость < 100 THEN 'Дешевые курсы'
+        WHEN стоимость BETWEEN 100 AND 500 THEN 'Средние курсы'
+        ELSE 'Дорогие курсы'
+    END AS категория_стоимости,
+    AVG(Оценка.значение) AS средняя_оценка
+FROM Курс
+JOIN Оценка ON Курс.course_id = Оценка.course_id
+GROUP BY категория_стоимости;
+
+7)  Топ-5 пользователей по количеству полученных достижений
+
+SELECT Пользователь.логин, COUNT(achievement_user.achievement_id) AS количество_достижений
+FROM achievement_user
+JOIN Пользователь ON achievement_user.user_id = Пользователь.user_id
+GROUP BY Пользователь.user_id
+ORDER BY количество_достижений DESC
+LIMIT 5;
+
+8)  Среднее количество шагов на урок по курсам
+
+SELECT Курс.название, AVG(количество_шагов) AS среднее_количество_шагов
+FROM (
+    SELECT Урок.course_id, COUNT(Степ.step_id) AS количество_шагов
+    FROM Степ
+    JOIN Урок ON Степ.lesson_id = Урок.lesson_id
+    GROUP BY Урок.course_id
+) AS шаги_по_урокам
+JOIN Курс ON шаги_по_урокам.course_id = Курс.course_id
+GROUP BY Курс.course_id;
+
+11) Retention rate (Коэффициент повторных покупок)
+
+WITH первые_покупки AS (
+    SELECT Пользователь.user_id, MIN(Пользователь.дата_регистрации) AS дата_первой_покупки
+    FROM user_course
+    JOIN Пользователь ON user_course.user_id = Пользователь.user_id
+    GROUP BY Пользователь.user_id
+),
+повторные_покупки AS (
+    SELECT user_course.user_id, COUNT(*) AS количество_покупок
+    FROM user_course
+    WHERE user_course.user_id IN (SELECT первые_покупки.user_id FROM первые_покупки)
+    GROUP BY user_course.user_id
+)
+SELECT 
+    ROUND(SUM(CASE WHEN повторные_покупки.количество_покупок > 1 THEN 1 ELSE 0 END)::DECIMAL / COUNT(*) * 100, 2) AS retention_rate
+FROM повторные_покупки;
+
+12) Анализ эффективности акций: сравнение продаж с использованием промокодов и без
+
+SELECT 
+    CASE WHEN promo_user.promo_id IS NULL THEN 'Без промокода' ELSE 'С промокодом' END AS тип_покупки,
+    COUNT(user_course.user_id) AS количество_покупок,
+    ROUND(AVG(Курс.стоимость), 2) AS средняя_стоимость
+FROM user_course
+LEFT JOIN promo_user ON user_course.user_id = promo_user.user_id
+JOIN Курс ON user_course.course_id = Курс.course_id
+GROUP BY тип_покупки;
+
+
+
+
+
+
+
+
+
+
+
+
+
+13) Курсы с наибольшим числом вложений:
+
+SELECT 
+    k.название AS course_name,
+    COUNT(a.attachment_id) AS attachments_count
+FROM 
+    Курс k
+JOIN 
+    Урок l ON k.course_id = l.course_id
+JOIN 
+    Степ s ON l.lesson_id = s.lesson_id
+JOIN 
+    Attachment_step a ON s.step_id = a.step_id
+GROUP BY 
+    k.course_id
+ORDER BY 
+    attachments_count DESC
+LIMIT 10;
+
+
+9) Выявление неактивных пользователей(Запрос выявляет пользователей, которые зарегистрировались, но не проявили никакой активности (не приобрели курс и не оставили оценок). Анализ вовлеченности)
+
+SELECT 
+    u.логин AS username,
+    u.email AS email,
+    u.дата_регистрации AS registration_date
+FROM 
+    Пользователь u
+LEFT JOIN 
+    user_course uc ON u.user_id = uc.user_id
+LEFT JOIN 
+    Оценка o ON u.user_id = o.user_id
+WHERE 
+    uc.user_id IS NULL 
+    AND o.user_id IS NULL;
+
+10) Процент выполнения курсов пользователями:   
+
+SELECT 
+    ROUND(COUNT(DISTINCT CASE WHEN Пользователь.сертификаты IS NOT NULL THEN user_course.user_id END)::DECIMAL
+          / COUNT(DISTINCT user_course.user_id) * 100, 2) AS процент_выполнения
+FROM user_course
+JOIN Пользователь ON user_course.user_id = Пользователь.user_id;
+
+
+14) Коэффициент завершения курсов по автору:    
+
+SELECT 
+    Курс.авторы AS автор,
+    ROUND(COUNT(DISTINCT CASE WHEN Пользователь.сертификаты IS NOT NULL THEN user_course.course_id END)::DECIMAL
+          / COUNT(DISTINCT user_course.course_id) * 100, 2) AS коэффициент_завершения
+FROM user_course
+JOIN Пользователь ON user_course.user_id = Пользователь.user_id
+JOIN Курс ON user_course.course_id = Курс.course_id
+GROUP BY Курс.авторы
+ORDER BY коэффициент_завершения DESC;
+
+15) курсы с наибольшим числом вложений:
+
+SELECT 
+    k.название AS course_name,
+    COUNT(a.attachment_id) AS attachments_count
+FROM 
+    Курс k
+JOIN 
+    Урок l ON k.course_id = l.course_id
+JOIN 
+    Степ s ON l.lesson_id = s.lesson_id
+JOIN 
+    Attachment_step a ON s.step_id = a.step_id
+GROUP BY 
+    k.course_id
+ORDER BY 
+    attachments_count DESC
+LIMIT 10;
+
+16) Коэффициент конверсии (зарегистрированные пользователи -> покупатели)
+
+WITH конверсия AS (
+    SELECT
+        COUNT(*) AS всего_пользователей,
+        COUNT(DISTINCT user_course.user_id) AS покупатели
+    FROM Пользователь
+    LEFT JOIN user_course ON Пользователь.user_id = user_course.user_id
+)
+SELECT 
+    ROUND(покупатели::DECIMAL / всего_пользователей * 100, 2) AS конверсия
+FROM конверсия;
+
+17) Время, проведенное на прохождении курса (приблизительная оценка по числу шагов)
+
+SELECT 
+    Курс.название AS курс,
+    SUM(шаги_по_урокам.количество_шагов) AS общее_число_шагов,
+    ROUND(SUM(шаги_по_урокам.количество_шагов) * 5.0 / 60, 2) AS предполагаемое_время_в_часах
+FROM (
+    SELECT Урок.course_id, COUNT(Степ.step_id) AS количество_шагов
+    FROM Степ
+    JOIN Урок ON Степ.lesson_id = Урок.lesson_id
+    GROUP BY Урок.course_id
+) шаги_по_урокам
+JOIN Курс ON шаги_по_урокам.course_id = Курс.course_id
+GROUP BY Курс.course_id;
+
+
+18) Коэффициент завершения курса (по шагам)
+
+WITH шаги_курса AS (
+    SELECT 
+        Урок.course_id,
+        COUNT(Степ.step_id) AS всего_шагов
+    FROM Степ
+    JOIN Урок ON Степ.lesson_id = Урок.lesson_id
+    GROUP BY Урок.course_id
+),
+пройденные_шаги AS (
+    SELECT 
+        user_course.course_id,
+        COUNT(user_course.user_id) AS пройденные_шаги
+    FROM user_course
+    JOIN Степ ON Степ.lesson_id = user_course.course_id
+    GROUP BY user_course.course_id
+)
+SELECT 
+    шаги_курса.course_id,
+    ROUND((пройденные_шаги.пройденные_шаги::DECIMAL / шаги_курса.всего_шагов) * 100, 2) AS процент_завершения
+FROM шаги_курса
+JOIN пройденные_шаги ON шаги_курса.course_id = пройденные_шаги.course_id;
+
+
+19) Распределение курсов по средней цене и популярности
+
+SELECT 
+    ROUND(AVG(Курс.стоимость), 2) AS средняя_цена,
+    COUNT(user_course.user_id) AS популярность
+FROM user_course
+JOIN Курс ON user_course.course_id = Курс.course_id
+GROUP BY Курс.course_id;
+
+
+
